@@ -1,0 +1,112 @@
+# Multi-node Hadoop: 1 NameNode + ResourceManager, 3 DataNode + NodeManager workers.
+#
+# Bring up:   docker compose -f docker/docker-compose.yml up -d
+# Web UIs:    NameNode http://localhost:9870   YARN http://localhost:8088
+# Tear down:  docker compose -f docker/docker-compose.yml down
+#
+# The project jar and the corpora are bind-mounted read-only into the NameNode so the
+# upload and run scripts never have to copy hundreds of megabytes into the image.
+# conf/ is mounted too, so a tuning change (yarn-site.xml, mapred-site.xml, ...) takes
+# effect on `up -d` instead of on a full image rebuild.
+name: bdav-hadoop
+
+# The reference deployment is Docker Desktop, where every container shares one VM. The
+# daemons are therefore pinned to small heaps: with Hadoop's defaults (1 GB per daemon)
+# three workers plus the master oversubscribe a 3.5 GB VM, the DataNode stops answering
+# RPC, tasks block on a 60 s socket read and YARN kills them as timed out.
+#
+# STATUS: unverified. These values and the YARN sizing in conf/ were adjusted after that
+# failure, but no cluster ever started under them - the Docker engine died first. See
+# docs/01-architecture.md 13.6 and docs/04-benchmark-report.md 10.
+x-worker-env: &worker-env
+  HDFS_DATANODE_OPTS: -Xmx160m
+  YARN_NODEMANAGER_OPTS: -Xmx160m
+
+services:
+  namenode:
+    build:
+      # Context is the repository root so the image can copy conf/ as well as
+      # docker/entrypoint-*.sh; .dockerignore keeps the corpora out of the build.
+      context: ..
+      dockerfile: docker/Dockerfile
+    image: bdav/hadoop:3.3.6
+    container_name: bdav-namenode
+    hostname: namenode
+    command: ["/usr/local/bin/entrypoint-namenode.sh"]
+    ports:
+      - "9870:9870"   # HDFS NameNode UI
+      - "9000:9000"   # HDFS RPC
+      - "8088:8088"   # YARN ResourceManager UI
+    volumes:
+      - namenode-data:/hadoop/name
+      - ../conf:/opt/hadoop/etc/hadoop:ro
+      - ../target:/opt/app:ro
+      - ../data:/data:ro
+    environment:
+      - CLUSTER_ROLE=namenode
+      - HDFS_NAMENODE_OPTS=-Xmx256m
+      - YARN_RESOURCEMANAGER_OPTS=-Xmx256m
+    healthcheck:
+      test: ["CMD-SHELL", "hdfs dfsadmin -report >/dev/null 2>&1 || exit 1"]
+      interval: 20s
+      timeout: 10s
+      retries: 12
+    networks: [hadoop]
+
+  datanode1:
+    image: bdav/hadoop:3.3.6
+    container_name: bdav-datanode1
+    hostname: datanode1
+    depends_on:
+      namenode:
+        condition: service_healthy
+    command: ["/usr/local/bin/entrypoint-datanode.sh"]
+    environment:
+      CLUSTER_ROLE: datanode
+      <<: *worker-env
+    volumes:
+      - datanode1-data:/hadoop/data
+      - ../conf:/opt/hadoop/etc/hadoop:ro
+    networks: [hadoop]
+
+  datanode2:
+    image: bdav/hadoop:3.3.6
+    container_name: bdav-datanode2
+    hostname: datanode2
+    depends_on:
+      namenode:
+        condition: service_healthy
+    command: ["/usr/local/bin/entrypoint-datanode.sh"]
+    environment:
+      CLUSTER_ROLE: datanode
+      <<: *worker-env
+    volumes:
+      - datanode2-data:/hadoop/data
+      - ../conf:/opt/hadoop/etc/hadoop:ro
+    networks: [hadoop]
+
+  datanode3:
+    image: bdav/hadoop:3.3.6
+    container_name: bdav-datanode3
+    hostname: datanode3
+    depends_on:
+      namenode:
+        condition: service_healthy
+    command: ["/usr/local/bin/entrypoint-datanode.sh"]
+    environment:
+      CLUSTER_ROLE: datanode
+      <<: *worker-env
+    volumes:
+      - datanode3-data:/hadoop/data
+      - ../conf:/opt/hadoop/etc/hadoop:ro
+    networks: [hadoop]
+
+volumes:
+  namenode-data:
+  datanode1-data:
+  datanode2-data:
+  datanode3-data:
+
+networks:
+  hadoop:
+    driver: bridge

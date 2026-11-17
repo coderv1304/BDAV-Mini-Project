@@ -1,0 +1,331 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Scalable Text Analytics Platform on Hadoop MapReduce
+  ====================================================
+  Build contract
+  ==============
+  * Java 11 bytecode (Hadoop 3.3.x is certified on 8/11; 11 is the default here).
+  * Hadoop artifacts are `provided`: at run time the jars come from the Hadoop
+    installation (`hadoop jar`, `hadoop classpath`) or from the Docker image.
+    This keeps the shipped jar ~200 KB instead of ~400 MB, so it can be copied
+    into a container or onto a DataNode without dragging Hadoop along.
+  * `hadoop-mapreduce-client-jobclient` is provided-only-but-on-the-test-classpath
+    so unit/integration tests can drive LocalJobRunner without a cluster.
+  * JaCoCo runs twice: `prepare-agent` for Surefire (unit tests) and
+    `prepare-agent-integration` for Failsafe (*IT). `report` merges both
+    exec files, so coverage reflects unit + LocalJobRunner integration tests.
+  * The coverage gate (>= 80% line) is a profile so that an exploratory build
+    is not blocked by it: `mvn -Pcoverage-gate verify`.
+-->
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+
+  <modelVersion>4.0.0</modelVersion>
+
+  <groupId>edu.bdav</groupId>
+  <artifactId>hadoop-text-analytics</artifactId>
+  <version>1.0.0</version>
+  <packaging>jar</packaging>
+
+  <name>Scalable Text Analytics Platform on Hadoop MapReduce</name>
+  <description>
+    Multi-job text analytics pipeline (normalized word count, stop-word/Top-N,
+    length and character statistics, n-grams, inverted index, TF-IDF chain,
+    pairs-vs-stripes co-occurrence, sentiment, cosine similarity) built on the
+    org.apache.hadoop.mapreduce API, runnable in local, pseudo-distributed and
+    Docker multi-node modes, with a Python reference implementation for
+    correctness verification and a benchmark harness for performance studies.
+  </description>
+
+  <properties>
+    <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+    <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
+    <maven.compiler.release>11</maven.compiler.release>
+
+    <!-- Pinned third-party versions. All of these are release versions that
+         exist on Maven Central; see docs/01-architecture.md for the rationale. -->
+    <hadoop.version>3.3.6</hadoop.version>
+    <slf4j.version>1.7.36</slf4j.version>
+    <junit.version>4.13.2</junit.version>
+    <mockito.version>4.11.0</mockito.version>
+    <jacoco.version>0.8.11</jacoco.version>
+    <surefire.version>3.2.5</surefire.version>
+    <failsafe.version>3.2.5</failsafe.version>
+    <compiler.plugin.version>3.11.0</compiler.plugin.version>
+    <shade.plugin.version>3.5.1</shade.plugin.version>
+
+    <main.class>edu.bdav.ta.Main</main.class>
+    <jar.name>text-analytics</jar.name>
+  </properties>
+
+  <dependencies>
+
+    <!-- ===============================================================
+         Hadoop (provided: supplied by the cluster / hadoop classpath)
+         =============================================================== -->
+    <dependency>
+      <groupId>org.apache.hadoop</groupId>
+      <artifactId>hadoop-common</artifactId>
+      <version>${hadoop.version}</version>
+      <scope>provided</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.apache.hadoop</groupId>
+      <artifactId>hadoop-mapreduce-client-core</artifactId>
+      <version>${hadoop.version}</version>
+      <scope>provided</scope>
+    </dependency>
+    <!-- LocalJobRunner (org.apache.hadoop.mapred.LocalJobRunner) lives here;
+         needed for the three-mode story and for integration tests. -->
+    <dependency>
+      <groupId>org.apache.hadoop</groupId>
+      <artifactId>hadoop-mapreduce-client-jobclient</artifactId>
+      <version>${hadoop.version}</version>
+      <scope>provided</scope>
+    </dependency>
+    <!-- Direct HDFS client calls: exists(), delete(), listStatus(), getFileStatus(). -->
+    <dependency>
+      <groupId>org.apache.hadoop</groupId>
+      <artifactId>hadoop-hdfs-client</artifactId>
+      <version>${hadoop.version}</version>
+      <scope>provided</scope>
+    </dependency>
+
+    <!-- ===============================================================
+         Logging: SLF4J API + reload4j (maintained log4j-1.2 fork that
+         Hadoop 3.3.x itself binds to). No System.out in production code.
+         =============================================================== -->
+    <dependency>
+      <groupId>org.slf4j</groupId>
+      <artifactId>slf4j-api</artifactId>
+      <version>${slf4j.version}</version>
+    </dependency>
+    <dependency>
+      <groupId>org.slf4j</groupId>
+      <artifactId>slf4j-reload4j</artifactId>
+      <version>${slf4j.version}</version>
+      <scope>test</scope>
+    </dependency>
+
+    <!-- ===============================================================
+         Test stack: JUnit 4 + Mockito.
+         MRUnit is retired (Apache Attic, last release 1.1.0 in 2014 and it is
+         not compatible with the Hadoop 2.x/3.x mapreduce API surface we use),
+         so mapper/reducer/combiner tests call the classes directly with
+         Mockito-mocked Context / counter objects. See docs for details.
+         =============================================================== -->
+    <dependency>
+      <groupId>junit</groupId>
+      <artifactId>junit</artifactId>
+      <version>${junit.version}</version>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.mockito</groupId>
+      <artifactId>mockito-core</artifactId>
+      <version>${mockito.version}</version>
+      <scope>test</scope>
+    </dependency>
+
+  </dependencies>
+
+  <build>
+    <finalName>${jar.name}</finalName>
+
+    <plugins>
+
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-compiler-plugin</artifactId>
+        <version>${compiler.plugin.version}</version>
+        <configuration>
+          <release>${maven.compiler.release}</release>
+          <encoding>UTF-8</encoding>
+          <showDeprecation>true</showDeprecation>
+        </configuration>
+      </plugin>
+
+      <!-- Unit tests: **/*Test.java -->
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-surefire-plugin</artifactId>
+        <version>${surefire.version}</version>
+        <configuration>
+          <systemPropertyVariables>
+            <file.encoding>UTF-8</file.encoding>
+          </systemPropertyVariables>
+        </configuration>
+      </plugin>
+
+      <!-- Integration tests: **/*IT.java (LocalJobRunner end-to-end runs) -->
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-failsafe-plugin</artifactId>
+        <version>${failsafe.version}</version>
+        <configuration>
+          <systemPropertyVariables>
+            <file.encoding>UTF-8</file.encoding>
+          </systemPropertyVariables>
+        </configuration>
+        <executions>
+          <execution>
+            <id>run-integration-tests</id>
+            <goals>
+              <goal>integration-test</goal>
+              <goal>verify</goal>
+            </goals>
+          </execution>
+        </executions>
+      </plugin>
+
+      <!-- Coverage: unit + integration exec files merged into one report -->
+      <plugin>
+        <groupId>org.jacoco</groupId>
+        <artifactId>jacoco-maven-plugin</artifactId>
+        <version>${jacoco.version}</version>
+        <configuration>
+          <excludes>
+            <!-- Thin argv dispatcher; exercised by scripts, covered indirectly
+                 by the ITs. Everything else is in scope for the 80% target. -->
+            <exclude>edu/bdav/ta/Main.class</exclude>
+          </excludes>
+        </configuration>
+        <executions>
+          <execution>
+            <id>prepare-agent</id>
+            <goals>
+              <goal>prepare-agent</goal>
+            </goals>
+          </execution>
+          <execution>
+            <id>prepare-agent-integration</id>
+            <goals>
+              <goal>prepare-agent-integration</goal>
+            </goals>
+            <configuration>
+              <!--
+                Append integration-test coverage to the SAME exec file.
+                Rationale: `report` (and `check`) read jacoco.exec only, so leaving
+                the IT agent on its default jacoco-it.exec silently under-reported
+                coverage by half - every job driver looked untested even though the
+                LocalJobRunner ITs execute them.
+              -->
+              <destFile>${project.build.directory}/jacoco.exec</destFile>
+              <append>true</append>
+            </configuration>
+          </execution>
+          <execution>
+            <id>report</id>
+            <phase>verify</phase>
+            <goals>
+              <goal>report</goal>
+            </goals>
+          </execution>
+        </executions>
+      </plugin>
+
+      <!-- Single runnable jar: `hadoop jar target/text-analytics.jar <class> ...` -->
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-shade-plugin</artifactId>
+        <version>${shade.plugin.version}</version>
+        <executions>
+          <execution>
+            <phase>package</phase>
+            <goals>
+              <goal>shade</goal>
+            </goals>
+            <configuration>
+              <createDependencyReducedPom>false</createDependencyReducedPom>
+              <minimizeJar>false</minimizeJar>
+              <transformers>
+                <transformer
+                    implementation="org.apache.maven.plugins.shade.resource.ManifestResourceTransformer">
+                  <mainClass>${main.class}</mainClass>
+                  <manifestEntries>
+                    <Implementation-Title>${project.name}</Implementation-Title>
+                    <Implementation-Version>${project.version}</Implementation-Version>
+                  </manifestEntries>
+                </transformer>
+                <!-- Required: Hadoop/CodecProvider discovery via META-INF/services -->
+                <transformer
+                    implementation="org.apache.maven.plugins.shade.resource.ServicesResourceTransformer"/>
+              </transformers>
+              <filters>
+                <filter>
+                  <artifact>*:*</artifact>
+                  <excludes>
+                    <exclude>META-INF/*.SF</exclude>
+                    <exclude>META-INF/*.DSA</exclude>
+                    <exclude>META-INF/*.RSA</exclude>
+                    <exclude>module-info.class</exclude>
+                  </excludes>
+                </filter>
+              </filters>
+            </configuration>
+          </execution>
+        </executions>
+      </plugin>
+
+    </plugins>
+  </build>
+
+  <profiles>
+
+    <!-- Enforce the 80% line-coverage target from the brief. -->
+    <profile>
+      <id>coverage-gate</id>
+      <build>
+        <plugins>
+          <plugin>
+            <groupId>org.jacoco</groupId>
+            <artifactId>jacoco-maven-plugin</artifactId>
+            <version>${jacoco.version}</version>
+            <executions>
+              <execution>
+                <id>coverage-check</id>
+                <phase>verify</phase>
+                <goals>
+                  <goal>check</goal>
+                </goals>
+                <configuration>
+                  <rules>
+                    <rule>
+                      <element>BUNDLE</element>
+                      <limits>
+                        <limit>
+                          <counter>LINE</counter>
+                          <value>COVEREDRATIO</value>
+                          <minimum>0.80</minimum>
+                        </limit>
+                      </limits>
+                    </rule>
+                  </rules>
+                </configuration>
+              </execution>
+            </executions>
+          </plugin>
+        </plugins>
+      </build>
+    </profile>
+
+    <!-- Optional: real-HDFS-baby-cluster tests (MiniDFSCluster) used for the
+         fault-tolerance experiment. Needs a POSIX-ish JVM environment with
+         native hadoop libs, i.e. Linux/WSL2/Docker - not a plain Windows shell.
+         Activate with: mvn -Pminicluster verify -->
+    <profile>
+      <id>minicluster</id>
+      <dependencies>
+        <dependency>
+          <groupId>org.apache.hadoop</groupId>
+          <artifactId>hadoop-minicluster</artifactId>
+          <version>${hadoop.version}</version>
+          <scope>test</scope>
+        </dependency>
+      </dependencies>
+    </profile>
+
+  </profiles>
+
+</project>

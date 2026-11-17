@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<?xml-stylesheet type="text/xsl" href="configuration.xsl"?>
+<!--
+  Site configuration shared by every role in the cluster.
+
+  fs.defaultFS points at the NameNode service name from docker-compose, so the same
+  file works for pseudo-distributed (change the host to localhost) and for the
+  multi-node cluster.
+-->
+<configuration>
+
+  <property>
+    <name>fs.defaultFS</name>
+    <value>hdfs://namenode:9000</value>
+    <description>Default filesystem URI: HDFS served by the NameNode container.</description>
+  </property>
+
+  <property>
+    <name>hadoop.tmp.dir</name>
+    <value>/hadoop/tmp</value>
+    <description>Scratch space for localised files and the shuffle.</description>
+  </property>
+
+  <property>
+    <name>io.file.buffer.size</name>
+    <value>131072</value>
+    <description>128 KiB: one buffer per stream, large enough for sequential scans.</description>
+  </property>
+
+  <property>
+    <name>hadoop.http.staticuser.user</name>
+    <value>hadoop</value>
+    <description>Identity shown by the web UIs in this non-secure lab cluster.</description>
+  </property>
+
+</configuration>

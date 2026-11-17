@@ -1,0 +1,11 @@
+# The cluster image only needs conf/ and docker/entrypoint-*.sh.
+# Excluding the corpora keeps the build context a few kilobytes instead of ~150 MB.
+data/generated/
+data/raw/
+out/
+target/
+results/logs/
+results/plots/
+.git/
+.idea/
+*.log

@@ -1,0 +1,91 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<?xml-stylesheet type="text/xsl" href="configuration.xsl"?>
+<!--
+  YARN sizing for a laptop-hosted 3-worker cluster.
+
+  The memory values are intentionally small: each container must fit alongside three
+  JVMs and a DataNode on one machine. Increase them proportionally on real hardware.
+-->
+<configuration>
+
+  <property>
+    <name>yarn.resourcemanager.hostname</name>
+    <value>namenode</value>
+    <description>ResourceManager runs on the master container.</description>
+  </property>
+
+  <property>
+    <name>yarn.nodemanager.aux-services</name>
+    <value>mapreduce_shuffle</value>
+    <description>Required for MapReduce on YARN.</description>
+  </property>
+
+  <property>
+    <name>yarn.nodemanager.aux-services.mapreduce_shuffle.class</name>
+    <value>org.apache.hadoop.mapred.ShuffleHandler</value>
+    <description>Shuffle service implementation.</description>
+  </property>
+
+  <property>
+    <name>yarn.nodemanager.resource.memory-mb</name>
+    <value>640</value>
+    <description>Memory each NodeManager may hand out. Two larger values were measured to be too
+      much on the reference host: at 3072 MB and again at 1536 MB per worker the Docker VM
+      (3.5 GB total) started swapping, DataNode IPC calls timed out after 60 s and YARN killed
+      the tasks (exit 137/143). 640 MB per worker - one 256 MB map or one 384 MB reduce - is the
+      third attempt at a size that fits. UNVERIFIED: no cluster ever started under these values,
+      so treat them as a starting point rather than a validated configuration.</description>
+  </property>
+
+  <property>
+    <name>yarn.nodemanager.resource.cpu-vcores</name>
+    <value>1</value>
+    <description>One slot per worker: at most three concurrent tasks across the cluster. Host CPU is
+      not the constraint (the VM sees 12 cores), memory is, and one slot keeps the resident set
+      of the three task JVMs bounded. Unverified for the same reason as the memory value above.</description>
+  </property>
+
+  <property>
+    <name>yarn.scheduler.maximum-allocation-vcores</name>
+    <value>1</value>
+    <description>Every container asks for one vcore, so the slot count above is the real limit.</description>
+  </property>
+
+  <property>
+    <name>yarn.scheduler.minimum-allocation-mb</name>
+    <value>256</value>
+    <description>Smallest container, matching mapreduce.map.memory.mb. A 512 MB minimum silently
+      rounded every map container up to 512 MB, which double-counted against the 640 MB worker.</description>
+  </property>
+
+  <property>
+    <name>yarn.scheduler.maximum-allocation-mb</name>
+    <value>512</value>
+    <description>Largest container: a reducer over a 10 MB corpus fits in 512 MB.</description>
+  </property>
+
+  <property>
+    <name>yarn.nodemanager.vmem-check-enabled</name>
+    <value>false</value>
+    <description>Virtual-memory checks are unreliable in containers and abort valid tasks.</description>
+  </property>
+
+  <property>
+    <name>yarn.nodemanager.pmem-check-enabled</name>
+    <value>true</value>
+    <description>Physical memory is checked, which is the limit that actually matters.</description>
+  </property>
+
+  <property>
+    <name>yarn.nodemanager.env-whitelist</name>
+    <value>JAVA_HOME,HADOOP_COMMON_HOME,HADOOP_HDFS_HOME,HADOOP_CONF_DIR,CLASSPATH_PREPEND_DISTCACHE,HADOOP_YARN_HOME,HADOOP_MAPRED_HOME</value>
+    <description>Propagates the variables the container launch scripts need.</description>
+  </property>
+
+  <property>
+    <name>yarn.log-aggregation-enable</name>
+    <value>true</value>
+    <description>Keeps container logs retrievable after a task finishes or dies.</description>
+  </property>
+
+</configuration>

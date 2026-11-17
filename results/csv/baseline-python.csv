@@ -1,0 +1,3 @@
+dataset,bytes,tokens,distinct_terms,wall_ms,tokens_per_second
+10m,10004228,1795998,5016,7295.9,246166.0
+100m,100048656,17974370,5016,82520.8,217816.2

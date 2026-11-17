@@ -1,0 +1,113 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<?xml-stylesheet type="text/xsl" href="configuration.xsl"?>
+<!--
+  MapReduce on YARN. These values are the cluster defaults; every experiment in this
+  project overrides the knobs it studies (-Dta.reducers, -Dta.codec, ...) on the
+  command line, which is why the defaults here stay conservative.
+
+  STATUS: unverified. The container sizes and the 900 s task timeout below were chosen to
+  fit a 3.5 GB Docker VM after two larger configurations failed, but no cluster ever
+  started under them (the engine died first). See docs/01-architecture.md 13.6.
+-->
+<configuration>
+
+  <property>
+    <name>mapreduce.framework.name</name>
+    <value>yarn</value>
+    <description>Run MapReduce through YARN (not the local runner).</description>
+  </property>
+
+  <property>
+    <name>mapreduce.application.classpath</name>
+    <value>$HADOOP_MAPRED_HOME/share/hadoop/mapreduce/*:$HADOOP_MAPRED_HOME/share/hadoop/mapreduce/lib/*</value>
+    <description>Keeps container classpaths identical to the client's.</description>
+  </property>
+
+  <property>
+    <name>mapreduce.map.memory.mb</name>
+    <value>256</value>
+    <description>Map containers are small: every map stage here reads at most a 500 KB document.</description>
+  </property>
+
+  <property>
+    <name>mapreduce.map.java.opts</name>
+    <value>-Xmx192m</value>
+    <description>Heap below the container size, leaving room for the JVM and off-heap sort buffers.</description>
+  </property>
+
+  <property>
+    <name>mapreduce.reduce.memory.mb</name>
+    <value>384</value>
+    <description>Reducers get half again a mapper: the inverted index and the join hold the most state.</description>
+  </property>
+
+  <property>
+    <name>mapreduce.reduce.java.opts</name>
+    <value>-Xmx288m</value>
+    <description>Heap below the container size for the same reason as the map side.</description>
+  </property>
+
+  <property>
+    <name>yarn.app.mapreduce.am.resource.mb</name>
+    <value>256</value>
+    <description>The ApplicationMaster is small; giving it a worker-sized container wastes a slot.</description>
+  </property>
+
+  <property>
+    <name>yarn.app.mapreduce.am.command-opts</name>
+    <value>-Xmx192m</value>
+    <description>Heap for the ApplicationMaster JVM.</description>
+  </property>
+
+  <property>
+    <name>mapreduce.task.timeout</name>
+    <value>900000</value>
+    <description>15 minutes. The default 600 s killed healthy tasks on this laptop while the Docker
+      VM was swapping: a task that is merely slow looks identical to a hung one. Deployed on real
+      hardware this goes back to the default.</description>
+  </property>
+
+  <property>
+    <name>mapreduce.task.io.sort.mb</name>
+    <value>64</value>
+    <description>Shuffle buffer per map task. It must fit in the map heap (192 MB), so the pre-tuning
+      200 MB is not an option here; 64 MB still produces few spills at this document size.</description>
+  </property>
+
+  <property>
+    <name>mapreduce.task.io.sort.factor</name>
+    <value>50</value>
+    <description>Streams merged per pass during the shuffle.</description>
+  </property>
+
+  <property>
+    <name>mapreduce.map.output.compress</name>
+    <value>false</value>
+    <description>Off by default: the compression ablation turns it on explicitly and measures it.</description>
+  </property>
+
+  <property>
+    <name>mapreduce.map.speculative</name>
+    <value>false</value>
+    <description>Disabled so benchmark timings are not distorted by speculative copies.</description>
+  </property>
+
+  <property>
+    <name>mapreduce.reduce.speculative</name>
+    <value>false</value>
+    <description>Same reason: a speculative reducer doubles network traffic mid-measurement.</description>
+  </property>
+
+  <property>
+    <name>mapreduce.job.reduces</name>
+    <value>2</value>
+    <description>Cluster default; the reducer-scaling study overrides it per run.</description>
+  </property>
+
+  <property>
+    <name>mapreduce.jobhistory.address</name>
+    <value>namenode:10020</value>
+    <description>JobHistory server on the master node (started by the NameNode entrypoint's image).</description>
+  </property>
+
+</configuration>

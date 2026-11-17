@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<?xml-stylesheet type="text/xsl" href="configuration.xsl"?>
+<!--
+  HDFS settings for a small lab cluster.
+
+  Replication 2 (not 3) is deliberate: it demonstrates a real replica without
+  needing three copies of every block on a single laptop, and it still proves
+  fault tolerance - killing one DataNode leaves every block readable.
+-->
+<configuration>
+
+  <property>
+    <name>dfs.replication</name>
+    <value>2</value>
+    <description>Two replicas: tolerates one DataNode failure without data loss.</description>
+  </property>
+
+  <property>
+    <name>dfs.namenode.name.dir</name>
+    <value>file:///hadoop/name</value>
+    <description>NameNode metadata directory (a named volume in compose).</description>
+  </property>
+
+  <property>
+    <name>dfs.datanode.data.dir</name>
+    <value>file:///hadoop/data</value>
+    <description>DataNode block directory (one named volume per worker).</description>
+  </property>
+
+  <property>
+    <name>dfs.blocksize</name>
+    <value>134217728</value>
+    <description>128 MiB blocks: one mapper per block for the line-oriented jobs.</description>
+  </property>
+
+  <property>
+    <name>dfs.namenode.handler.count</name>
+    <value>40</value>
+    <description>Enough RPC threads for 3 workers running many parallel tasks.</description>
+  </property>
+
+  <property>
+    <name>dfs.datanode.max.transfer.threads</name>
+    <value>1024</value>
+    <description>Avoids the classic "xceiver count exceeded" failure under shuffle load.</description>
+  </property>
+
+  <property>
+    <name>dfs.permissions.enabled</name>
+    <value>false</value>
+    <description>Lab cluster: permissions would add nothing to the experiment and can fail writes.</description>
+  </property>
+
+</configuration>
